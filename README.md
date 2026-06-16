@@ -1,112 +1,114 @@
+# Facial Expression Recognition Challenge
 
-# Facial Expression Recognition Challenge 
+## პროექტის შესახებ
 
-## პროექტის აღწერა
-Kaggle-ის FER Challenge-ის გადაწყვეტა PyTorch-ით.
-7 ემოციის კლასიფიკაცია: Angry, Disgust, Fear, Happy, Sad, Surprise, Neutral
+ეს პროექტი Kaggle-ის FER Challenge-ის ფარგლებში შესრულდა. მიზანი იყო სახის გამომეტყველების კლასიფიკაცია 7 კატეგორიად: Angry, Disgust, Fear, Happy, Sad, Surprise და Neutral. მონაცემები წარმოდგენილია 48x48 პიქსელის გრეისქეილ სურათებით.
 
-## WandB Project
-[ექსპერიმენტების ნახვა](https://wandb.ai/tgura23-free-university-of-tbilisi-/fer-challenge)
+WandB პროექტი: [ექსპერიმენტების ნახვა](https://wandb.ai/tgura23-free-university-of-tbilisi-/fer-challenge)
 
 ## მონაცემები
-- Train: ~28,000 სურათი (48x48 grayscale)
+
+- Train: ~28,000 სურათი
 - Validation: ~7,000 სურათი
-- კლასები: 7 (imbalanced — Disgust ყველაზე ცოტა)
+- კლასები არათანაბრად არის განაწილებული — Disgust კლასი გაცილებით ნაკლებია დანარჩენებთან შედარებით
 
 ---
 
-## არქიტექტურები და გადაწყვეტილებები
+## ჰიპერპარამეტრების არჩევანი
 
-### მოდელი 1: SmallCNN (Baseline / Underfitting)
-```
-Conv(1→32) → ReLU → MaxPool
-Conv(32→64) → ReLU → MaxPool
-Linear(9216→256) → Dropout(0.5) → Linear(256→7)
-```
-**გადაწყვეტილება:** საწყისი წერტილი. მარტივი არქიტექტურა რომ დავინახოთ სად ვართ. მოსალოდნელია underfitting რადგან ძალიან ცოტა პარამეტრი აქვს.
+სანამ მოდელებზე გადავიდოდი, რამდენიმე ზოგადი გადაწყვეტილება მივიღე:
 
-**შედეგი:** Val Acc ~50% — underfit ✅
+**Batch Size — 128:** თავდაპირველად 64 გამოვიყენე, მაგრამ შემდეგ 128-ზე გადავედი, რადგან training-ი ამით გაცილებით სწრაფად მიდის — ერთ iteration-ში მეტ მაგალითს ამუშავებს. ხარისხზე დიდი გავლენა არ აქვს ამ შემთხვევაში.
 
----
+**Epochs — 8:** დრო-ს შეზღუდვის გამო 8 epoch-ზე შევჩერდი. ეს საკმარისია იმის სანახავად, თუ სწორი მიმართულებით მიდის მოდელი, მაგრამ უფრო მეტი epoch-ით შედეგები გაცილებით უკეთესი იქნებოდა.
 
-### მოდელი 2: MediumCNN (BatchNorm დამატება)
-```
-Conv(1→32) → BN → ReLU → MaxPool
-Conv(32→64) → BN → ReLU → MaxPool
-Conv(64→128) → BN → ReLU → MaxPool
-Linear(4608→512) → Dropout(0.4) → Linear(512→256) → Linear(256→7)
-```
-**გადაწყვეტილება:** BatchNorm დაემატა რადგან:
-1. training სტაბილური გახდება
-2. უფრო სწრაფად ისწავლის
-3. regularization ეფექტი აქვს
+**Optimizer — Adam:** Adam ყველა მოდელზე გამოვიყენე, რადგან ეს ოპტიმიზატორი adaptive learning rate-ს იყენებს და ზოგადად კარგ შედეგებს იძლევა CNN-ებზე სხვა ოპტიმიზატორებთან შედარებით.
 
-**შედეგი:** Val Acc ~60% — გაუმჯობესება ✅
+**Learning Rate:** პირველ ორ მოდელზე 0.001 გამოვიყენე — ეს Adam-ისთვის სტანდარტული საწყისი მნიშვნელობაა. DeepCNN-ზე 0.0005-ზე გადავედი, რადგან ღრმა ქსელები დიდი learning rate-ით არასტაბილურად სწავლობენ — "ნაბიჯები" ძალიან დიდი ხდება და optimum-ს გადაახტება.
+
+**Weight Decay:** DeepCNN-ზე 1e-3 გამოვიყენე regularization-ისთვის, რაც overfitting-ს ამცირებს წონების ძალიან დიდად გაზრდის დასჯით.
 
 ---
 
-### მოდელი 3: DeepCNN + Residual Blocks
-```
-Conv(1→64) → BN → ReLU
-ResBlock(64) → MaxPool
-Conv(64→128) → BN → ReLU
-ResBlock(128) → MaxPool
-Conv(128→256) → BN → ReLU
-ResBlock(256) → MaxPool
-AdaptiveAvgPool → Linear(256→128) → Dropout(0.5) → Linear(128→7)
-```
-**გადაწყვეტილება:** Residual connections დაემატა რადგან:
-1. Gradient vanishing პრობლემა მოიხსნება
-2. Deep network უკეთ ისწავლის
-3. Skip connections identity-ს ინარჩუნებს
+## არქიტექტურები
 
-**შედეგი:** Val Acc ~65% ✅
+### მოდელი 1 — SmallCNN (Baseline)
+
+პირველი მოდელი მაქსიმალურად მარტივი გავაკეთე — ორი convolutional layer, Dropout და სრულად დაკავშირებული ფენები. მიზანი იყო baseline-ის დადგენა, რომ გამეგო სად ვდგავარ საწყის წერტილში. Dropout(0.5) დავამატე overfitting-ის თავიდან ასაცილებლად.
+
+**შედეგი:**
+- Train Acc: 0.5065
+- Val Acc: 0.5233
+
+Train და Val accuracy-ს შორის სხვაობა მცირეა, მაგრამ ორივე დაბალია — ეს იმაზე მიუთითებს, რომ მოდელი ვერ პოულობს საკმარის პატერნებს მონაცემებში. ანუ საჭიროა უფრო რთული არქიტექტურა.
 
 ---
 
-### მოდელი 4: OverfitCNN (განზრახ Overfit)
-```
-Conv(1→64) → BN → ReLU
-ResBlock(64) → MaxPool
-Conv(64→128) → BN → ReLU
-ResBlock(128) → MaxPool
-Conv(128→256) → BN → ReLU
-ResBlock(256) → MaxPool
-AdaptiveAvgPool → Linear(256→128) → Linear(128→7)
-```
-**გადაწყვეტილება:** იგივე DeepCNN, მაგრამ Dropout გარეშე და მეტი epoch. მიზანია overfitting-ის დემონსტრაცია — Train Acc >> Val Acc.
+### მოდელი 2 — MediumCNN + BatchNorm
 
-**შედეგი:** Train Acc ~90%, Val Acc ~55% — overfit ✅
+პირველი მოდელის შედეგის ნახვის შემდეგ გადავწყვიტე მესამე convolutional layer და BatchNormalization დამემატებინა. BatchNorm-ი ყოველი layer-ის შემდეგ გამოვიყენე — ის ანორმალიზებს activation-ებს, რაც training-ს სტაბილურს ხდის და gradient-ს უკეთ ავრცელებს. Dropout 0.5-დან 0.4-ზე დავამცირე, რადგან BatchNorm-ს თავისით აქვს მცირე regularization ეფექტი.
+
+**შედეგი:**
+- Train Acc: 0.5220
+- Val Acc: 0.5289
+
+შედეგი გაუმჯობესდა SmallCNN-თან შედარებით. BatchNorm-მა მართლაც გაამართლა — training უფრო სტაბილურად წარიმართა.
 
 ---
 
-## ჰიპერპარამეტრების ექსპერიმენტები
+### მოდელი 3 — DeepCNN + Residual Blocks
 
-| Run | LR | Weight Decay | Dropout | Val Acc |
-|-----|----|-------------|---------|---------|
-| SmallCNN | 0.001 | 1e-4 | 0.5 | ~50% |
-| MediumCNN | 0.001 | 1e-4 | 0.4 | ~60% |
-| DeepCNN | 0.0005 | 1e-3 | 0.5 | ~65% |
-| DeepCNN_overfit | 0.001 | 0 | 0 | overfit |
+მესამე მოდელში Residual Block-ები დავამატე. პრობლემა ის არის, რომ ღრმა ქსელებში gradient vanishing ჩნდება — ანუ უკანა layer-ებამდე gradient თითქმის ნულამდე მცირდება და ვეღარ ისწავლიან. Residual Block-ებს აქვს skip connection, რომელიც input-ს პირდაპირ output-ს უმატებს, ამიტომ gradient-ი პირდაპირ გადადის და ეს პრობლემა არ ჩნდება. AdaptiveAvgPool გამოვიყენე ბოლოში, რაც spatial dimension-ს ამცირებს და პარამეტრების რაოდენობას ამცირებს.
 
----
-
-## Forward & Backward შემოწმება
-
-ყველა მოდელისთვის პირველ epoch-ზე:
-- **Forward Check:** output shape = (batch_size, 7) ✅
-- **Backward Check:** gradient norm გამოითვლება ✅
-- Gradient clipping: max_norm=1.0
+**შედეგი:**
+- Train Acc: 0.5374
+- Val Acc: 0.5380
 
 ---
 
-## დასკვნა
+## Overfit და Underfit მოდელები
+
+### OverfitCNN — განზრახ Overfit
+
+ეს მოდელი DeepCNN-ის იდენტურია, მაგრამ Dropout სრულად ამოვიღე და Weight Decay ნულზე დავაყენე. Dropout არის regularization-ის მეთოდი — training-ის დროს შემთხვევით "გამორთავს" ნეირონებს, რაც მოდელს ხელს უშლის train data-ს ზეპირად დასწავლაში. მის გარეშე მოდელი train data-ს ზედმეტად "ისწავლის" და ახალ მონაცემებზე ვეღარ გაეწია — ზუსტად ეს დაფიქსირდა შედეგებშიც.
+
+**შედეგი:**
+- Train Acc: 0.6096
+- Val Acc: 0.4779
+
+Train-სა და Val-ს შორის 0.13-ის სხვაობა სწორედ overfit-ის კლასიკური ნიშანია. მოდელმა train data ისწავლა, მაგრამ generalize ვერ შეძლო.
+
+---
+
+### UnderfitCNN — განზრახ Underfit
+
+ეს მოდელი მაქსიმალურად გავამარტივე — მხოლოდ ერთი convolutional layer 8 filter-ით და ძალიან პატარა Linear layer 32 ნეირონით. ამდენად პატარა მოდელს საკმარისი "სიმძლავრე" არ გააჩნია მონაცემებში პატერნების პოვნისთვის — ის ვერც კი ცდილობს რთული features-ების სწავლას.
+
+**შედეგი:**
+- Train Acc: 0.4628
+- Val Acc: 0.4706
+
+Train და Val accuracy თითქმის ერთნაირია, მაგრამ ორივე დაბალია. ეს underfit-ის ნიშანია — მოდელი ვერც train data-ს სწავლობს სათანადოდ, რადგან ძალიან მარტივია.
+
+---
+
+## შედეგების შეჯამება
 
 | მოდელი | Train Acc | Val Acc | დიაგნოზი |
 |--------|-----------|---------|----------|
-| SmallCNN | ~46% | ~50% | Underfit |
-| MediumCNN | ~62% | ~60% | კარგი |
-| DeepCNN | ~70% | ~65% | კარგი |
-| DeepCNN_overfit | ~90% | ~55% | Overfit |
+| UnderfitCNN | 0.4628 | 0.4706 | Underfit — მოდელი ძალიან მარტივია |
+| SmallCNN | 0.5065 | 0.5233 | Baseline — კარგი საწყისი წერტილი |
+| MediumCNN | 0.5220 | 0.5289 | BatchNorm-მა გაამართლა |
+| DeepCNN | 0.5374 | 0.5380 | საუკეთესო — Residual + Dropout |
+| OverfitCNN | 0.6096 | 0.4779 | Overfit — Dropout-ის გარეშე |
 
-BatchNorm და Residual connections ყველაზე დიდი გაუმჯობესება მოიტანა.
+## რატომ აღმოჩნდა DeepCNN საუკეთესო
+
+DeepCNN-მა საუკეთესო შედეგი აჩვენა რამდენიმე მიზეზის გამო. Residual Block-ებმა gradient-ის გავრცელება გაამარტივა და ღრმა ქსელში სწავლა შესაძლებელი გახდა. BatchNormalization-მა training სტაბილური გახადა. Dropout(0.5) და Weight Decay(1e-3) ერთად კარგი regularization-ი უზრუნველყო — Train და Val accuracy თითქმის ერთნაირია (0.5374 vs 0.5380), რაც იმაზე მეტყველებს რომ მოდელი არ არის overfit. Learning Rate 0.0005-მა კი უფრო ფრთხილი სწავლა უზრუნველყო, რაც ამ სიღრმის ქსელისთვის შესაფერისი აღმოჩნდა.
+
+## Forward და Backward შემოწმება
+
+ყველა მოდელისთვის პირველ epoch-ზე შევამოწმე:
+- **Forward Check:** output shape სწორია — (batch_size, 7) ✅
+- **Backward Check:** gradient norm გამოითვლება ✅
+- Gradient Clipping გამოვიყენე max_norm=1.0-ით, რაც gradient explosion-ს აგვარებს
